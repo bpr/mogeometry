@@ -27,3 +27,18 @@ doc-check = { cmd = "python docs/check_docstrings.py", depends-on = ["deps"] }
 mojo = "==1.3.0.dev2026110305"
 max-core = "==26.8.0.dev2026110305"
 python = ">=3.12,<3.14"
+
+# Reference data: C++ drivers that call geometry-central and write the
+# expected results to tests/data/<area>/ (see tests/data/README.md).
+# geometry-central is found at $GEOMETRY_CENTRAL_PATH (default
+# ../../c++/geometry-central); Eigen is the 3.3.9 its CMake downloads.
+# `pixi run -e ref ref-data`
+[feature.ref.dependencies]
+cxx-compiler = "*"
+eigen = "==3.3.9"
+
+[feature.ref.tasks]
+ref-data = "bash tests/data/build_reference.sh"
+
+[environments]
+ref = { features = ["ref"], no-default-feature = true }

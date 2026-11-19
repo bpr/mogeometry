@@ -22,9 +22,10 @@ two overlap (the cotan Laplacian, dual areas, `d0`/`d1` and the Hodge
 stars); mogeometry works on halfedge meshes, MojoDEC on simplicial
 complexes of any dimension.
 
-Status: the build, the dependency on MojoDEC, and the tooling are set up;
-no geometry-central code is ported yet. `docs/plan.md` gives the order
-and the design questions to settle first.
+Status: the start of layer 1 is ported (`Vector2`, `Vector3`, elementary
+geometry, the scalar helpers of `utilities.h`), with the reference-data
+pipeline that tests it against geometry-central. `docs/plan.md` gives
+the order and the design questions to settle at layer 2.
 
 ## Commands
 
@@ -38,7 +39,14 @@ pixi run test-release        # tests with -D ASSERT=none
 pixi run package             # build/mogeometry.mojoc
 pixi run format              # mojo format mogeometry tests
 pixi run doc-check           # doc string warnings vs docs/docstring-baseline.txt
+pixi run -e ref ref-data     # rebuild tests/data/*/reference.txt from geometry-central
 ```
+
+The `ref` environment has a C++ compiler and Eigen 3.3.9 (the version
+geometry-central's CMake downloads), and no Mojo. It compiles each
+`tests/data/<area>/reference.cpp` against geometry-central at
+`$GEOMETRY_CENTRAL_PATH` (default `../../c++/geometry-central`, checked
+out at the commit in `NOTICE`); see `tests/data/README.md`.
 
 Run a single test file from the repo root (after `pixi run deps`):
 
@@ -103,10 +111,22 @@ AGENTS.md has the details and more.
   every call passes `rtol` explicitly (normally `rtol=0`);
   `tests/run_all.sh` fails on a call without one.
 - Write `sqrt(x)` (`std.math`), never `x ** 0.5`: Mojo's `**` with a
-  fractional exponent is off by up to ~5e-12 relative.
+  fractional exponent is off by up to ~5e-12 relative. For other powers
+  use `libm_pow` (`mogeometry.utilities.utilities`), the C library's.
+- Mojo's `std.math.exp` on `Float64` is off by up to ~35,000 ulps
+  (~8e-12 relative; measured against libm on 200,000 points in
+  [-10, 10]); use `libm_exp`. `log`, `sin`, `cos`, `atan2`, `acos`, and
+  `hypot` are within an ulp of libm.
 - Mojo's float operations allow contraction, so LLVM may fuse `a * b + c`
   into one rounding, or not, depending on the code around it. Where two
   code paths must agree bit for bit, write explicit `x.fma(y, acc)`.
+  It is why the port does not match geometry-central bit for bit: even
+  `Vector3.norm2()` differs in the last bit (the reference is built with
+  `-ffp-contract=off`). Tests compare in roundoffs instead (Testing).
+- Mojo does not merge overloads of a name imported from two modules
+  (`from .a import f` and `from .b import f` is an "ambiguous import"
+  error), so a function geometry-central overloads across headers (a
+  free `dot` for `Vector2` and for `Vector3`) becomes a method.
 - Mojo's `>>` by 64 or more is undefined (it gave garbage): bound shift
   loops.
 - NuMojo's elementwise array arithmetic is slow (50 times a sparse
@@ -115,11 +135,22 @@ AGENTS.md has the details and more.
 
 ## Architecture
 
-Nothing is ported yet. `docs/plan.md` lists the layers in porting order
-and the design questions to settle before the mesh (element handles,
-containers that follow mesh mutation, cached geometry quantities,
-implicit twins). Record each decision here, with its reason, when it is
-made.
+`docs/plan.md` lists the layers in porting order and the design
+questions to settle before the mesh (element handles, containers that
+follow mesh mutation, cached geometry quantities, implicit twins).
+Record each decision here, with its reason, when it is made.
+
+- **Small vectors are three (or two) `Float64` fields.** `Vector2` and
+  `Vector3` are `TrivialRegisterPassable` structs with fields `x, y(, z)`,
+  as geometry-central's are; this keeps its order of operations. It is
+  provisional: a `SIMD[DType.float64, 4]` layout may be much faster, and
+  `docs/plan.md` (Performance experiments) records the comparison to
+  run. A struct's `__getattr__(self, name: StringLiteral)` lets a SIMD
+  layout keep the `v.x` syntax, so the swap can stay inside the module.
+- **Vector operations are methods, not free functions:** `u.dot(v)`,
+  `u.cross(v)`, `v.norm()`, `v.unit()` (Mojo cannot import two free
+  `dot`s; see Known toolchain bugs). Geometry code ported later follows
+  the same rule.
 
 ## Porting
 
@@ -162,3 +193,10 @@ made.
   both compute the same quantity.
 - Floating-point checks use `assert_almost_equal(..., atol=..., rtol=0)`
   with a tolerance from the problem's conditioning, not a loose default.
+- Reference data stores each double as its bit pattern, so the expected
+  values are exactly geometry-central's. The port differs from them in
+  the last bits (FMA contraction), so `tests/test_utilities.mojo`
+  compares in roundoffs, `eps * max(1, |value|)`, and prints the worst
+  difference per family. The drivers keep random inputs well-conditioned
+  (no nearly parallel lines, no flat tetrahedra) so the tolerance can be
+  tight (16 roundoffs); degenerate input gets hand-written tests.
