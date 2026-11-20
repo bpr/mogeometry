@@ -18,7 +18,7 @@ AGENTS.md.
 - After changing doc strings, run `pixi run doc-check`; if it improved,
   `pixi run doc-check --update` lowers the baseline.
 - After pulling MojoDEC, or changing it, run `pixi run deps` (the test
-  task does) so `build/mojodec.mojoc` is current.
+  task does) so `build/molina.mojoc` and `build/mojodec.mojoc` are current.
 - A change MojoDEC needs (a solver option, a bug) goes into MojoDEC,
   with its tests there, not into a copy here.
 - `pixi run deps` rewrites `build/`; don't run it, or any task that

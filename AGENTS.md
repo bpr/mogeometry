@@ -23,9 +23,11 @@ stars); mogeometry works on halfedge meshes, MojoDEC on simplicial
 complexes of any dimension.
 
 Status: the start of layer 1 is ported (`Vector2`, `Vector3`, elementary
-geometry, the scalar helpers of `utilities.h`), with the reference-data
-pipeline that tests it against geometry-central. `docs/plan.md` gives
-the order and the design questions to settle at layer 2.
+geometry, the scalar helpers of `utilities.h`, `DisjointSets`), and the
+start of layer 2: `ManifoldSurfaceMesh` built from face lists, its
+element handles, navigation and iterators, and `MeshData` containers.
+The reference-data pipeline tests both against geometry-central.
+`docs/plan.md` gives the order and what layer 2 still lacks.
 
 ## Commands
 
@@ -65,7 +67,8 @@ Mojo module of the same name (`src/surface/heat_method_distance.cpp` ->
 `mogeometry/surface/heat_method_distance.mojo`):
 
 - `mogeometry/utilities`: vectors, quaternions, elementary geometry,
-  disjoint sets, nearest neighbors.
+  disjoint sets, nearest neighbors, and what meshes and point clouds
+  share: element handles (`element.mojo`) and `MeshData`.
 - `mogeometry/surface`: meshes, mesh data, geometry, algorithms.
 - `mogeometry/pointcloud`: point clouds.
 - `mogeometry/__init__.mojo` re-exports the public API (add new public
@@ -82,17 +85,19 @@ Mojo module of the same name (`src/surface/heat_method_distance.cpp` ->
 
 ## Tech stack and toolchain
 
-- **MojoDEC dependency.** `pixi run deps` precompiles MojoDEC's vendored
-  NuMojo and MojoDEC itself from `$MOJODEC_PATH` (default `../MojoDEC`)
-  into `build/numojo.mojoc` and `build/mojodec.mojoc`, with this
-  workspace's Mojo (a `.mojoc` loads only in the Mojo that built it), so
-  code compiles with `-I . -I build`. Import from `mojodec` directly
-  (`from mojodec import SparseCholesky`, `from mojodec.core.sparse import
-  CSRMatrix`). Read `../MojoDEC/AGENTS.md` before using its solvers:
-  `SparseLDLT` (refinement steps, supernodal layout), `SparseCholesky`
-  (SPD, no refinement), `cg`/`minres` (keyword options, `nullspace=`),
-  `eigsh`, and NuMojo's slow elementwise arithmetic are all described
-  there. A fix MojoDEC needs goes into MojoDEC.
+- **MojoDEC dependency.** `pixi run deps` precompiles, from
+  `$MOJODEC_PATH` (default `../MojoDEC`), MojoDEC's vendored NuMojo, its
+  linear algebra package molina, and MojoDEC itself into
+  `build/numojo.mojoc`, `build/molina.mojoc`, and `build/mojodec.mojoc`,
+  with this workspace's Mojo (a `.mojoc` loads only in the Mojo that
+  built it), so code compiles with `-I . -I build`. Sparse matrices and
+  solvers come from molina (`from molina import CSRMatrix,
+  SparseCholesky`), the DEC from mojodec. Read `../MojoDEC/AGENTS.md`
+  before using the solvers: `SparseLDLT` (refinement steps, supernodal
+  layout), `SparseCholesky` (SPD, no refinement), `cg`/`minres` (keyword
+  options, `nullspace=`), `eigsh`, and NuMojo's slow elementwise
+  arithmetic are all described there. A fix MojoDEC or molina needs goes
+  there.
 - **Pinned Mojo.** `pixi.toml` pins `mojo` and `max-core` to the exact
   nightly MojoDEC's `pixi.lock` records (1.3.0.dev2026110305), because
   MojoDEC and NuMojo are compiled from source here and newer nightlies
@@ -152,8 +157,10 @@ Record each decision here, with its reason, when it is made.
   run. A struct's `__getattr__(self, name: StringLiteral)` lets a SIMD
   layout keep the `v.x` syntax, so the swap can stay inside the module.
 - **Element handles are bare typed indices; the mesh navigates.**
-  `Vertex`, `Halfedge`, `Edge`, `Face` will be one-`Int` structs
-  (distinct types, so a vertex cannot be passed as a face), and
+  `Vertex`, `Halfedge`, `Corner`, `Edge`, `Face`, `BoundaryLoop` are
+  one-`Int` structs, aliases of `ElementHandle[kind]`
+  (`mogeometry/utilities/element.mojo`; distinct types, so a vertex
+  cannot be passed as a face), and
   navigation goes through the mesh: `mesh.next(h)`, `mesh.twin(h)`,
   `mesh.vertex(h)`, `for h in mesh.outgoing_halfedges(v)`.
   geometry-central's handles carry a mesh pointer (`h.twin().vertex()`);
@@ -192,15 +199,19 @@ Record each decision here, with its reason, when it is made.
   The brand also spreads the origin parameter, as pointer handles do.
   (Checked on 1.3.0.dev2026110305.)
 - **Debug builds tag handles with their mesh.** Each mesh gets a tag
-  when it is built (copies keep it: they have the same elements). In
-  debug builds, the handles a mesh returns carry the tag in the high
-  bits of their `Int` (indices below 2^44 leave 20 bits), and every
-  mesh access checks the tag, the index range, and that the element is
-  not deleted. `h.index` masks the tag off. A handle made from a plain
-  integer (`Vertex(5)`) has tag 0 and is not checked. Part of the tag
-  is a generation that `compress()` bumps, so handles from before a
-  renumbering fail the check. With `-D ASSERT=none` the tag is compiled
-  out: handles are plain indices, at no cost.
+  when it is built: a 24-bit id, a hash of its input (so copies keep it,
+  as they have the same elements), and a 7-bit generation that
+  `compress()` will bump. In debug builds, the handles a mesh returns
+  carry the tag above the low 32 bits of their `Int` that hold the index
+  (44 bits if `MESH_INDEX` becomes `Int64`), and every mesh method
+  asserts that a handle's tag is its mesh's or 0, and that its index is
+  in range; `MeshData[e]` checks the tag too. `h.index()` masks the tag
+  off. A handle made from a plain integer (`Vertex(5)`) has tag 0 and is
+  not checked. The checks are `debug_assert[assert_mode="safe"]`, so
+  they stop the program (tests use `mesh.owns(h)`, the same check as a
+  `Bool`). With `-D ASSERT=none` the tag is compiled out: handles are
+  plain indices, at no cost. Handles compare and hash by index, so a
+  tagged and an untagged handle to the same element are equal.
 - **Mesh data containers sync explicitly.** Mutations (flip, split,
   collapse) never renumber: new elements go at the end, deleted ones
   are marked. Only `compress()` renumbers, and the mesh logs each
@@ -208,9 +219,11 @@ Record each decision here, with its reason, when it is made.
   reference to the mesh (geometry-central's `MeshData` holds a pointer
   and registers callbacks); they record the generation they match, and
   `data.sync(mesh)` grows them and applies the pending renumberings. In
-  debug builds `data[v]` checks `v`'s generation against the
-  container's, so a container not synced after a `compress()` raises
-  instead of returning wrong values. This keeps containers free of an
+  debug builds `data[v]` checks `v`'s tag against the container's, so
+  a container not synced after a `compress()` stops the program instead
+  of returning wrong values. (Ported so far: growth, and `sync` raising
+  for another mesh; the renumbering log arrives with `compress()`.)
+  This keeps containers free of an
   origin parameter, lets a struct own a mesh together with its data,
   and costs nothing per access in release builds; the price is a
   `sync` call after a phase of mutation.
@@ -239,7 +252,11 @@ Record each decision here, with its reason, when it is made.
   struct that holds a mesh, and every return type, would have to bind
   or carry the width, and the unused width would need its own tests.
   Since the width is private, adding the parameter later touches only
-  those structs.
+  those structs. The benchmark's `mesh` variant runs the same kernels on
+  the real `ManifoldSurfaceMesh` (positions in a `VertexData`): within 2%
+  of the raw `Int32` arrays on every kernel, once the element ranges
+  (`mesh.faces()`, ...) skip their deleted-element check on a compressed
+  mesh (it cost 12% on face areas).
 - **Vector operations are methods, not free functions:** `u.dot(v)`,
   `u.cross(v)`, `v.norm()`, `v.unit()` (Mojo cannot import two free
   `dot`s; see Known toolchain bugs). Geometry code ported later follows
@@ -261,7 +278,7 @@ Record each decision here, with its reason, when it is made.
   Record each renaming that is not mechanical in the module's doc
   string.
 - Parallelize only after the serial port matches the reference, and
-  then with MojoDEC's `parallel_ranges` (`mojodec.core.parallel`),
+  then with molina's `parallel_ranges` (`molina.parallel`),
   keeping results bit for bit serial (see MojoDEC's AGENTS.md, Parallel
   loops). geometry-central itself is serial.
 
@@ -293,3 +310,11 @@ Record each decision here, with its reason, when it is made.
   difference per family. The drivers keep random inputs well-conditioned
   (no nearly parallel lines, no flat tetrahedra) so the tolerance can be
   tight (16 roundoffs); degenerate input gets hand-written tests.
+- Mesh reference data (`tests/data/surface/`) is integers, compared
+  exactly: the port numbers halfedges, edges, and boundary loops as
+  geometry-central does, so its connectivity arrays and element queries
+  must match index for index. The driver writes each mesh's face list
+  too, so the Mojo test needs no mesh file reader. Test meshes are
+  generated (grids, tori, annuli, fans) or geometry-central's CC0
+  assets (`bob_small.ply`); its other assets carry no license, so they
+  are not copied.

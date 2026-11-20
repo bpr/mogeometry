@@ -2,9 +2,21 @@
 Utilities (`mogeometry.utilities`)
 ==================================
 Small vectors (`Vector2`, `Vector3`), quaternions, elementary geometry,
-disjoint sets, nearest neighbors: geometry-central's `utilities/`.
+disjoint sets, nearest neighbors, and the element handles and data
+containers that meshes share: geometry-central's `utilities/`.
 """
 
+from mogeometry.utilities.disjoint_sets import DisjointSets, MarkedDisjointSets
+from mogeometry.utilities.element import (
+    INVALID_IND,
+    MESH_CHECKS,
+    MESH_INDEX,
+    ElementHandle,
+    ElementKind,
+    ElementMesh,
+    MeshElement,
+    MeshTag,
+)
 from mogeometry.utilities.elementary_geometry import (
     RayRayIntersectionResult2D,
     RaySegmentIntersectionResult2D,
@@ -20,6 +32,7 @@ from mogeometry.utilities.elementary_geometry import (
     triangle_area,
     triangle_is_valid,
 )
+from mogeometry.utilities.mesh_data import MeshData
 from mogeometry.utilities.utilities import (
     PI,
     clamp,

@@ -14,11 +14,37 @@ triangulations, parameterization, remeshing). A Mojo port of
 geometry-central. Sparse linear algebra comes from MojoDEC.
 
 Ported so far: the small vectors and elementary geometry of
-`mogeometry.utilities`. `docs/plan.md` gives the order of the rest.
+`mogeometry.utilities`, and `ManifoldSurfaceMesh` with its element
+handles, navigation, and data containers (`mogeometry.surface`). `docs/plan.md` gives the order of the rest.
 """
 
+from mogeometry.surface import (
+    BoundaryLoop,
+    BoundaryLoopData,
+    Corner,
+    CornerData,
+    DiamondBoundary,
+    Edge,
+    EdgeData,
+    EdgeVertices,
+    Face,
+    FaceData,
+    Halfedge,
+    HalfedgeData,
+    ManifoldSurfaceMesh,
+    Vertex,
+    VertexData,
+)
 from mogeometry.utilities import (
+    INVALID_IND,
+    MESH_CHECKS,
+    MESH_INDEX,
     PI,
+    DisjointSets,
+    ElementHandle,
+    ElementKind,
+    MarkedDisjointSets,
+    MeshData,
     RayRayIntersectionResult2D,
     RaySegmentIntersectionResult2D,
     SegmentSegmentIntersectionResult2D,

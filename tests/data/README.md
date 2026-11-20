@@ -6,6 +6,7 @@ each with the C++ driver that wrote it:
 | Directory    | Driver                     | Tested by                    |
 | ------------ | -------------------------- | ---------------------------- |
 | `utilities/` | `utilities/reference.cpp`  | `tests/test_utilities.mojo`  |
+| `surface/`   | `surface/reference.cpp`    | `tests/test_surface_mesh.mojo` |
 
 Rebuild with `pixi run -e ref ref-data` (`build_reference.sh`). It
 compiles each driver, with any geometry-central sources it needs,
@@ -18,7 +19,7 @@ geometry-central's CMake downloads. Drivers are built with
 
 ## Format
 
-`reference.txt` has one case per line:
+`utilities/reference.txt` has one case per line:
 
 ```
 name in1 in2 ... -> out1 out2 ...
@@ -31,3 +32,11 @@ driver's `l.i(...)` and `l.o(...)` calls list each name's inputs and
 outputs in order.
 Inputs are random, from a fixed seed, and filtered to be well-conditioned
 (see the driver), so the tests can use tight tolerances.
+
+`surface/reference.txt` holds whole meshes, all integers: for each, its
+face list and the arrays geometry-central's `ManifoldSurfaceMesh` built
+from it (`he_next`, `he_vertex`, ..., one line each, the name and length
+first), up to `end`; and inputs geometry-central must reject, as
+`invalid NAME THREW` and their faces. The driver's header gives the
+layout. It reads two of geometry-central's test meshes from the checkout
+(passed as its argument) and generates the rest.

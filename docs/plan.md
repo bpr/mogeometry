@@ -28,6 +28,16 @@ library is about 40,000 lines of C++.
    construction from a polygon soup, `SimplePolygonMesh`, OBJ/PLY/OFF/STL
    input and output, then the mutations (`flip`, `splitEdge`,
    `collapseEdge`, `insertVertex`, ...) and `MutationManager`.
+   *Done:* `ManifoldSurfaceMesh` from face lists (exactly
+   geometry-central's element numbering), the handles with debug mesh
+   tags, navigation, element ranges and navigation iterators, the
+   whole-mesh queries (counts, Euler characteristic, genus, components,
+   index maps, `validateConnectivity`), and `MeshData` with growth-only
+   `sync`. *Next:* mesh input and output (OBJ, PLY, OFF, STL; tests then
+   use files), `SimplePolygonMesh`, the mutations and `compress()` with
+   its renumbering log for `sync`, and the construction from a twin
+   list. *Deferred:* the general `SurfaceMesh` (decided: manifold only,
+   for now), `MeshData` arithmetic operators, `RichSurfaceMeshData`.
 3. **Geometry** (`base_geometry_interface`, `intrinsic_`,
    `extrinsic_`, `embedded_geometry_interface`,
    `edge_length_geometry`, `vertex_position_geometry`): edge lengths,

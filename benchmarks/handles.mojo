@@ -19,6 +19,11 @@ A minimal manifold triangle mesh with implicit twins (`twin(h) = h ^ 1`,
   geometry-central's carry a `SurfaceMesh*`: `h.twin().vertex()`.
 - `pointer-iter`: the same, iterating with `for h in v.outgoing()`.
 
+The `mesh` variant runs the same kernels on mogeometry's own
+`ManifoldSurfaceMesh` (`Int32` storage, positions in a `VertexData`),
+built from the same faces, to check that the real mesh keeps the speed
+of the `index32` variant.
+
 Each variant without pointer handles also runs on a copy of the mesh
 whose connectivity arrays hold `Int32` instead of `Int` (`raw32`,
 `index32`, `index-iter32`): handles stay `Int`, only the storage
@@ -46,7 +51,7 @@ from std.random import random_ui64, seed
 from std.sys import size_of
 from std.time import perf_counter_ns
 
-from mogeometry import PI, Vector3
+from mogeometry import PI, ManifoldSurfaceMesh, Vector3, VertexData
 
 comptime RUNS = 9
 """Each timing is the best of this many runs."""
@@ -592,6 +597,99 @@ def cotan_pointer(mesh: Mesh64, mut out: List[Float64]):
 
 
 # ===----------------------------------------------------------------------=== #
+# Kernels on mogeometry's ManifoldSurfaceMesh
+# ===----------------------------------------------------------------------=== #
+
+
+def surface_mesh(mesh: Mesh64) raises -> ManifoldSurfaceMesh:
+    """The same mesh as a `ManifoldSurfaceMesh`: faces read back in the
+    order they were built, so every index agrees."""
+    var faces = List[List[Int]](capacity=mesh.n_faces)
+    for f in range(mesh.n_faces):
+        var h = Int(mesh.f_halfedge[f])
+        var face = List[Int]()
+        for _ in range(3):
+            face.append(Int(mesh.he_vertex[h]))
+            h = Int(mesh.he_next[h])
+        faces.append(face^)
+    return ManifoldSurfaceMesh(faces)
+
+
+def ring_mesh(
+    mesh: ManifoldSurfaceMesh, pos: VertexData[Vector3], mut out: List[Vector3]
+):
+    for v in mesh.vertices():
+        var acc = Vector3.zero()
+        for h in mesh.outgoing_halfedges(v):
+            acc += pos[mesh.vertex(mesh.twin(h))]
+        out[v.index()] = acc
+
+
+def connect_mesh(mesh: ManifoldSurfaceMesh) -> Int:
+    var s = 0
+    for v in mesh.vertices():
+        for h in mesh.outgoing_halfedges(v):
+            s += mesh.vertex(mesh.twin(h)).index() + mesh.face(h).index()
+    return s
+
+
+def faces_mesh(
+    mesh: ManifoldSurfaceMesh, pos: VertexData[Vector3], mut out: List[Float64]
+):
+    for f in mesh.faces():
+        var h = mesh.halfedge(f)
+        var h1 = mesh.next(h)
+        var h2 = mesh.next(h1)
+        out[f.index()] = _area(
+            pos[mesh.vertex(h)], pos[mesh.vertex(h1)], pos[mesh.vertex(h2)]
+        )
+
+
+def cotan_mesh(
+    mesh: ManifoldSurfaceMesh, pos: VertexData[Vector3], mut out: List[Float64]
+):
+    for e in mesh.edges():
+        var h = mesh.halfedge(e)
+        var t = mesh.twin(h)
+        var a = pos[mesh.vertex(h)]
+        var b = pos[mesh.vertex(t)]
+        var c = pos[mesh.vertex(mesh.next(mesh.next(h)))]
+        var d = pos[mesh.vertex(mesh.next(mesh.next(t)))]
+        out[e.index()] = 0.5 * (_cot(a, b, c) + _cot(b, a, d))
+
+
+def bench_mesh(mesh: ManifoldSurfaceMesh, pos: VertexData[Vector3]):
+    var ring = List[Vector3](length=mesh.n_vertices(), fill=Vector3.zero())
+    var best = 1e30
+    for _ in range(RUNS):
+        var t = Int(perf_counter_ns())
+        ring_mesh(mesh, pos, ring)
+        best = min(best, _ms(t))
+    _row("ring", "mesh", best, mesh.n_vertices(), String(_sum3(ring)))
+    best = 1e30
+    var s = 0
+    for _ in range(RUNS):
+        var t = Int(perf_counter_ns())
+        s = connect_mesh(mesh)
+        best = min(best, _ms(t))
+    _row("connect", "mesh", best, mesh.n_vertices(), String(s))
+    var areas = List[Float64](length=mesh.n_faces(), fill=0.0)
+    best = 1e30
+    for _ in range(RUNS):
+        var t = Int(perf_counter_ns())
+        faces_mesh(mesh, pos, areas)
+        best = min(best, _ms(t))
+    _row("faces", "mesh", best, mesh.n_faces(), String(_sum(areas)))
+    var cot = List[Float64](length=mesh.n_edges(), fill=0.0)
+    best = 1e30
+    for _ in range(RUNS):
+        var t = Int(perf_counter_ns())
+        cotan_mesh(mesh, pos, cot)
+        best = min(best, _ms(t))
+    _row("cotan", "mesh", best, mesh.n_edges(), String(_sum(cot)))
+
+
+# ===----------------------------------------------------------------------=== #
 # Timing
 # ===----------------------------------------------------------------------=== #
 
@@ -726,3 +824,8 @@ def main() raises:
                 "shuffled" if shuffle else "grid order",
             )
             run(mesh, m32)
+            var msm = surface_mesh(mesh)
+            var pos = VertexData[Vector3](
+                msm, mesh.positions.copy(), Vector3.zero()
+            )
+            bench_mesh(msm, pos)

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Precompile MojoDEC and its vendored NuMojo into build/, with this
-# workspace's Mojo (a .mojoc only loads in the Mojo version that built it).
+# Precompile MojoDEC, its linear algebra package molina, and its vendored
+# NuMojo into build/, with this workspace's Mojo (a .mojoc only loads in
+# the Mojo version that built it).
 # Run from the repository root: pixi run deps
 # MOJODEC_PATH points at the MojoDEC checkout (default: ../MojoDEC).
 set -e
@@ -11,4 +12,5 @@ if [ ! -d "$MOJODEC_PATH/mojodec" ]; then
 fi
 mkdir -p build
 mojo precompile "$MOJODEC_PATH/third_party/numojo" -o build/numojo.mojoc
+mojo precompile "$MOJODEC_PATH/molina" -o build/molina.mojoc
 mojo precompile -I build "$MOJODEC_PATH/mojodec" -o build/mojodec.mojoc
