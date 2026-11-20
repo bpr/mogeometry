@@ -93,29 +93,49 @@ measure and where; the result and the decision go in AGENTS.md
     route), deciding later costs little; if it needs call sites to
     change, decide before layer 3 grows.
 
+- **Element order.** The handle experiment found memory order matters
+  far more than handle style: on a 1M-face torus, the same kernels run
+  15 to 20 times slower when vertices and faces are randomly relabeled
+  than in grid order (`pixi run bench-handles`). geometry-central keeps
+  the order of the input file. Worth measuring, once meshes load from
+  files: how ordered real meshes are (the test meshes, Thingi10k-style
+  scans), and what an optional reordering at load costs and saves
+  (vertices along a space-filling curve or by reverse Cuthill-McKee,
+  faces sorted by their lowest vertex, halfedges by face). It must
+  stay optional and explicit: indices are user-visible, and results
+  compared with geometry-central's need its order.
+
 ## Design questions to settle at layer 2
 
-- **Element handles.** geometry-central's `Vertex`, `Halfedge`, ...
-  carry a pointer to their mesh, so `v.halfedge().twin().vertex()`
-  works. In Mojo a handle could be a bare index with navigation on the
-  mesh (`mesh.twin(he)`), or an index plus an unsafe pointer to the
-  mesh's arrays. Bare indices are simpler and safer; measure what the
-  chained style costs before choosing it.
-- **Containers that follow mutation.** geometry-central's `MeshData`
-  registers callbacks with its mesh so it grows, shrinks, and permutes
-  when the mesh changes. Mojo has no cheap way for a mesh to reach the
-  containers built on it; candidates: containers that check the mesh's
-  capacity on access, or a generation counter that makes stale
-  containers raise.
+- **Element handles.** *Decided: bare typed indices, navigation on the
+  mesh* (AGENTS.md, Architecture, has the reasons and the numbers from
+  `benchmarks/handles.mojo`). geometry-central's `Vertex`, `Halfedge`,
+  ... carry a pointer to their mesh, so `v.halfedge().twin().vertex()`
+  works. Measured in Mojo, that style is no faster, doubles the size of
+  a stored handle, and puts an origin parameter on every type that
+  holds a handle.
+- **Checking a handle's mesh.** *Decided: a mesh tag in debug builds*
+  (AGENTS.md, Architecture). Compile-time branding was tried and fails
+  on mutating calls.
+- **Containers that follow mutation.** *Decided: explicit sync*
+  (AGENTS.md, Architecture). geometry-central's `MeshData` registers
+  callbacks with its mesh so it grows, shrinks, and permutes when the
+  mesh changes; here containers hold no reference to the mesh and
+  `data.sync(mesh)` catches up, with a generation check in debug builds.
+- **Index width in storage.** *Decided: `Int32`, set by one constant*
+  (AGENTS.md, Architecture). Handles stay `Int`; navigation is 20 to
+  40% faster on a 1M-face mesh in grid order, 5 to 20% on face and
+  edge kernels.
 - **Cached geometry.** geometry-central computes quantities on demand
   (`requireEdgeLengths()`, then `geometry.edgeLengths`) and keeps them
   until `unrequire`. MojoDEC caches nothing; here the cache is the
   library's API, so port it, with the dependency graph between
   quantities explicit.
-- **Implicit twins.** `ManifoldSurfaceMesh` stores no twin array (the
-  twin of halfedge `h` is `h ^ 1`); the general `SurfaceMesh` stores
-  siblings. Port both, as geometry-central does, or only the manifold
-  mesh first.
+- **Implicit twins.** *Decided: the manifold mesh only, for now*
+  (AGENTS.md, Architecture). `ManifoldSurfaceMesh` stores no twin array
+  (the twin of halfedge `h` is `h ^ 1`); the general `SurfaceMesh`
+  stores siblings. The navigation API stays one a general mesh could
+  implement later.
 
 ## Testing
 

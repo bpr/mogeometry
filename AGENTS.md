@@ -37,9 +37,10 @@ pixi run deps                # precompile NuMojo and MojoDEC -> build/*.mojoc
 pixi run test                # every tests/test_*.mojo (runs deps first)
 pixi run test-release        # tests with -D ASSERT=none
 pixi run package             # build/mogeometry.mojoc
-pixi run format              # mojo format mogeometry tests
+pixi run format              # mojo format mogeometry tests benchmarks
 pixi run doc-check           # doc string warnings vs docs/docstring-baseline.txt
 pixi run -e ref ref-data     # rebuild tests/data/*/reference.txt from geometry-central
+pixi run bench-handles       # the element-handle experiment (release build)
 ```
 
 The `ref` environment has a C++ compiler and Eigen 3.3.9 (the version
@@ -73,6 +74,9 @@ Mojo module of the same name (`src/surface/heat_method_distance.cpp` ->
 - `tests/`: one `test_*.mojo` per area; reference data from
   geometry-central in `tests/data/<area>/` with the C++ driver that
   wrote it; meshes in `tests/meshes/`.
+- `benchmarks/`: timing experiments behind design decisions (each
+  file's doc string says what it measures; AGENTS.md, Architecture,
+  records the results).
 - `tools/build_deps.sh`: the `deps` task.
 - `docs/`: the plan, the doc string guide, the doc-check baseline.
 
@@ -147,6 +151,95 @@ Record each decision here, with its reason, when it is made.
   `docs/plan.md` (Performance experiments) records the comparison to
   run. A struct's `__getattr__(self, name: StringLiteral)` lets a SIMD
   layout keep the `v.x` syntax, so the swap can stay inside the module.
+- **Element handles are bare typed indices; the mesh navigates.**
+  `Vertex`, `Halfedge`, `Edge`, `Face` will be one-`Int` structs
+  (distinct types, so a vertex cannot be passed as a face), and
+  navigation goes through the mesh: `mesh.next(h)`, `mesh.twin(h)`,
+  `mesh.vertex(h)`, `for h in mesh.outgoing_halfedges(v)`.
+  geometry-central's handles carry a mesh pointer (`h.twin().vertex()`);
+  `benchmarks/handles.mojo` (`pixi run bench-handles`) measured both
+  styles in Mojo, with safe `Pointer`s, on a torus of 1M faces
+  (i7-10875H; 2026-11-18):
+  - Bare indices ran as fast as raw array code in every kernel (one-ring
+    sums, face areas, cotan weights, navigation only). Pointer handles
+    were 7 to 10% slower on the one-ring position sum (in grid order,
+    repeatably) and equal elsewhere. With shuffled element order, all
+    variants were memory-bound and within run-to-run noise (+-25%).
+  - Iterators (`for h in mesh.outgoing(v)`) cost nothing over a manual
+    `do ... while` loop, in either style.
+  - A pointer handle is 16 bytes, an index 8: stored handles (paths,
+    surface points, lists of elements) would double.
+  - A pointer handle's type carries the mesh's origin
+    (`Halfedge[o: ImmOrigin]`), so every struct and function that holds
+    or passes handles would take that parameter, and a struct that owns
+    a mesh could not hold handles into it (it would refer to itself).
+  - Mojo does not stop mutation while pointer handles are alive (its
+    exclusivity checks are per call, not across statements), so they
+    would not make mutation safer; it does reject using one after the
+    mesh is moved.
+  The cost is wordier navigation (`mesh.vertex(mesh.twin(h))`), eased
+  by iterators and by the mesh's compound queries (geometry-central's
+  `tipVertex`, `degree`, `isBoundary` become `mesh.tip_vertex(h)`,
+  `mesh.degree(v)`, `mesh.is_boundary(v)`). An index alone cannot tell
+  which mesh it came from; the next two items are how that is checked.
+- **Compile-time branding was tried and rejected.** A handle can carry
+  its mesh's origin as a zero-size parameter (`Halfedge[o: ImmOrigin]`,
+  still 8 bytes; mesh methods `def next[o: ImmOrigin](ref [o] self, h:
+  Halfedge[o])`), and then a handle from one mesh passed to another is
+  a compile error. But Mojo treats the brand as a reference into the
+  mesh, so a mutating method cannot take a handle: `mesh.flip(e)` fails
+  with "aliasing values passed mutably to 'self' and immutably to 'e'".
+  The brand also spreads the origin parameter, as pointer handles do.
+  (Checked on 1.3.0.dev2026110305.)
+- **Debug builds tag handles with their mesh.** Each mesh gets a tag
+  when it is built (copies keep it: they have the same elements). In
+  debug builds, the handles a mesh returns carry the tag in the high
+  bits of their `Int` (indices below 2^44 leave 20 bits), and every
+  mesh access checks the tag, the index range, and that the element is
+  not deleted. `h.index` masks the tag off. A handle made from a plain
+  integer (`Vertex(5)`) has tag 0 and is not checked. Part of the tag
+  is a generation that `compress()` bumps, so handles from before a
+  renumbering fail the check. With `-D ASSERT=none` the tag is compiled
+  out: handles are plain indices, at no cost.
+- **Mesh data containers sync explicitly.** Mutations (flip, split,
+  collapse) never renumber: new elements go at the end, deleted ones
+  are marked. Only `compress()` renumbers, and the mesh logs each
+  renumbering with the generation it starts. Containers hold no
+  reference to the mesh (geometry-central's `MeshData` holds a pointer
+  and registers callbacks); they record the generation they match, and
+  `data.sync(mesh)` grows them and applies the pending renumberings. In
+  debug builds `data[v]` checks `v`'s generation against the
+  container's, so a container not synced after a `compress()` raises
+  instead of returning wrong values. This keeps containers free of an
+  origin parameter, lets a struct own a mesh together with its data,
+  and costs nothing per access in release builds; the price is a
+  `sync` call after a phase of mutation.
+- **The manifold mesh only, for now.** The mesh is geometry-central's
+  `ManifoldSurfaceMesh`: implicit twins (`twin(h) = h ^ 1`,
+  `edge(h) = h / 2`), no sibling arrays, no runtime twin flag (its
+  general `SurfaceMesh` branches on `useImplicitTwinFlag` in every
+  `twin`). Most of the course's algorithms need no more. Algorithms
+  navigate only through mesh methods, so a general mesh can be added
+  later as a second type with the same methods.
+- **Connectivity is stored as `Int32`; handles stay `Int`.** The
+  storage type is one module-level constant (`comptime MESH_INDEX =
+  DType.int32`), private behind the mesh methods, which widen every
+  read to `Int`; switching all meshes to 64-bit is a one-line change.
+  `benchmarks/handles.mojo` also runs the raw and index kernels on a
+  copy of the mesh whose arrays hold `Int32`. Three runs on the
+  1M-face torus (i7-10875H; 2026-11-18), grid order: one-ring sums 20
+  to 25% faster, navigation only 25 to 40%, face areas 5 to 20%, cotan
+  weights 5 to 8%; on a 20,000-face torus, which fits in cache, 10 to
+  15% on the one-ring kernels. Shuffled, `Int32` was usually about 10%
+  faster but within run-to-run noise (+-25%). The connectivity arrays
+  drop from 144 to 72 MB per 1M faces; the limit is 2^31 halfedges
+  (about 700M faces). A per-mesh width parameter
+  (`SurfaceMesh[I: DType = DType.int32]`) was considered: functions
+  taking a bare `SurfaceMesh` are generic over it for free, but every
+  struct that holds a mesh, and every return type, would have to bind
+  or carry the width, and the unused width would need its own tests.
+  Since the width is private, adding the parameter later touches only
+  those structs.
 - **Vector operations are methods, not free functions:** `u.dot(v)`,
   `u.cross(v)`, `v.norm()`, `v.unit()` (Mojo cannot import two free
   `dot`s; see Known toolchain bugs). Geometry code ported later follows

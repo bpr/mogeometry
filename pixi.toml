@@ -14,7 +14,9 @@ test = { cmd = "bash tests/run_all.sh", depends-on = ["deps"] }
 # release builds: bounds checks (debug_assert) compiled out
 test-release = { cmd = "bash tests/run_all.sh", env = { MOJO_FLAGS = "-D ASSERT=none" }, depends-on = ["deps"] }
 package = { cmd = "mojo precompile -I build mogeometry -o build/mogeometry.mojoc", depends-on = ["deps"] }
-format = "mojo format mogeometry tests"
+format = "mojo format mogeometry tests benchmarks"
+# the element-handle experiment (docs/plan.md; results in AGENTS.md)
+bench-handles = { cmd = "mojo run -D ASSERT=none -I . -I build benchmarks/handles.mojo", depends-on = ["deps"] }
 # `pixi run doc-check [--update | --list PATTERN]`: doc string warnings
 # against docs/docstring-baseline.txt (see docs/writing-docs.md)
 doc-check = { cmd = "python docs/check_docstrings.py", depends-on = ["deps"] }
