@@ -19,7 +19,7 @@ library is about 40,000 lines of C++.
    `UnitVector3`, `DisjointSets`, the random-number helpers, and k-nearest
    neighbors (point clouds, layer 7; MojoDEC's `KDTree`,
    `mojodec.core.kd_tree`, may serve, after a check of its speed against
-   nanoflann's).
+   nanoflann's, ported here since mogeometry doesn't import MojoDEC).
 2. **Surface mesh** (`surface/surface_mesh`, `manifold_surface_mesh`,
    `halfedge_element_types`, `surface_mesh_factories`, `meshio`):
    the halfedge arrays, element handles and their navigation,
@@ -60,12 +60,12 @@ library is about 40,000 lines of C++.
    triangulations, the point cloud heat solver, sampling.
 
 `numerical/` (Eigen and SuiteSparse wrappers) is not ported: its users
-call MojoDEC's `CSRMatrix`, `SparseLDLT`/`SparseCholesky`, `cg`,
+call molina's `CSRMatrix`, `SparseLDLT`/`SparseCholesky`, `cg`,
 `minres`, and `eigsh`. Complex-valued systems (the connection
 Laplacians, direction fields, the vector heat method) need complex
 sparse matrices or their real 2n x 2n form; geometry-central uses
 `std::complex<double>`. Decide when layer 3 needs it: the real form
-works with MojoDEC as it is.
+works with molina as it is.
 
 ## Performance experiments
 
@@ -154,7 +154,7 @@ measure and where; the result and the decision go in AGENTS.md
 - Reference values come from geometry-central itself: a small C++
   driver per area, built in the pixi `ref` environment (a C++ compiler
   and Eigen 3.3.9), writes the expected results to `tests/data/<area>/`
-  (as MojoDEC does for faer's AMD and amgcl). Commit the data and the
+  (as molina does for faer's AMD and amgcl). Commit the data and the
   driver, not the build. `tests/data/README.md` describes the format;
   `tests/data/utilities/` is the first. Layers that need geometry-central
   compiled (not just its headers) list the sources to build in
@@ -165,4 +165,5 @@ measure and where; the result and the decision go in AGENTS.md
   bob) are CC0.
 - Where a quantity also exists in MojoDEC (the DEC operators, cotan
   Laplacian, dual areas), compare the two on the same mesh, minding
-  orientation and sign conventions.
+  orientation and sign conventions, with MojoDEC's results exported as
+  test data (mogeometry doesn't import MojoDEC).

@@ -17,12 +17,11 @@ AGENTS.md.
   where the test has none (see `docs/plan.md`, Testing).
 - After changing doc strings, run `pixi run doc-check`; if it improved,
   `pixi run doc-check --update` lowers the baseline.
-- After pulling MojoDEC, or changing it, run `pixi run deps` (the test
-  task does) so `build/molina.mojoc` and `build/mojodec.mojoc` are current.
-- A change MojoDEC needs (a solver option, a bug) goes into MojoDEC,
-  with its tests there, not into a copy here.
-- `pixi run deps` rewrites `build/`; don't run it, or any task that
-  depends on it, while a `pixi run test` is running.
+- A change molina needs (a solver option, a bug) goes into molina,
+  with its tests there, not into a copy here; then move its `rev` in
+  `pixi.toml`.
+- Don't import mojodec: MojoDEC may depend on mogeometry, not the
+  other way.
 
 ## Where to look
 
@@ -32,4 +31,4 @@ AGENTS.md.
 | What to port next, open design questions   | `docs/plan.md`                          |
 | Doc string style                           | `docs/writing-docs.md`                  |
 | The original C++                           | geometry-central, commit in `NOTICE`    |
-| Sparse matrices and solvers                | `../MojoDEC/AGENTS.md`, Sparse direct   |
+| Sparse matrices and solvers                | `../molina/AGENTS.md`, Architecture     |

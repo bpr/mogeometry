@@ -35,8 +35,8 @@ for f in tests/test_*.mojo; do
             echo "warning: skipping $f: proptest not found at $PROPTEST_PATH (set PROPTEST_PATH)" >&2
             continue
         fi
-        mojo run $MOJO_FLAGS -I . -I build -I "$PROPTEST_PATH" "$f"
+        mojo run $MOJO_FLAGS -I . -I "$PROPTEST_PATH" "$f"
     else
-        mojo run $MOJO_FLAGS -I . -I build "$f"
+        mojo run $MOJO_FLAGS -I . "$f"
     fi
 done

@@ -1,5 +1,5 @@
-# The build works: mogeometry imports, and molina's sparse solvers (MojoDEC's
-# linear algebra) link.
+# The build works: mogeometry imports, and molina's sparse solvers (the git
+# dependency pixi builds) link.
 
 from std.testing import TestSuite, assert_almost_equal, assert_equal
 

@@ -15,12 +15,14 @@ direction fields, intrinsic triangulations, parameterization, remeshing,
 point clouds). The port starts from geometry-central commit `019669d`
 (2026-06-13; full hash in `NOTICE`).
 
-It runs on Mojo 1.3 and builds on MojoDEC (a sibling checkout,
-`../MojoDEC`), a discrete exterior calculus library by the same author,
-for sparse linear algebra. Much of the course's material is DEC, so the
-two overlap (the cotan Laplacian, dual areas, `d0`/`d1` and the Hodge
-stars); mogeometry works on halfedge meshes, MojoDEC on simplicial
-complexes of any dimension.
+It runs on Mojo 1.3 and builds on molina (https://github.com/bpr/molina,
+a sibling checkout at `../molina`) for sparse linear algebra. molina was
+split out of MojoDEC (`../MojoDEC`), a discrete exterior calculus
+library by the same author. Much of the course's material is DEC, so
+mogeometry and MojoDEC overlap (the cotan Laplacian, dual areas,
+`d0`/`d1` and the Hodge stars); mogeometry works on halfedge meshes,
+MojoDEC on simplicial complexes of any dimension. mogeometry does not
+depend on MojoDEC; MojoDEC may come to depend on mogeometry.
 
 Status: the start of layer 1 is ported (`Vector2`, `Vector3`, elementary
 geometry, the scalar helpers of `utilities.h`, `DisjointSets`), and the
@@ -34,9 +36,8 @@ The reference-data pipeline tests both against geometry-central.
 All tooling runs through pixi (linux-64 only):
 
 ```sh
-pixi install                 # Mojo 1.3 nightly (MojoDEC's version) + MAX, Python
-pixi run deps                # precompile NuMojo and MojoDEC -> build/*.mojoc
-pixi run test                # every tests/test_*.mojo (runs deps first)
+pixi install                 # Mojo 1.3 nightly (MojoDEC's version) + MAX, Python, molina
+pixi run test                # every tests/test_*.mojo
 pixi run test-release        # tests with -D ASSERT=none
 pixi run package             # build/mogeometry.mojoc
 pixi run format              # mojo format mogeometry tests benchmarks
@@ -51,10 +52,10 @@ geometry-central's CMake downloads), and no Mojo. It compiles each
 `$GEOMETRY_CENTRAL_PATH` (default `../../c++/geometry-central`, checked
 out at the commit in `NOTICE`); see `tests/data/README.md`.
 
-Run a single test file from the repo root (after `pixi run deps`):
+Run a single test file from the repo root:
 
 ```sh
-pixi run mojo run -I . -I build tests/test_build.mojo
+pixi run mojo run -I . tests/test_build.mojo
 ```
 
 Property tests (`tests/test_properties*.mojo`, none yet) need proptest at
@@ -73,47 +74,48 @@ Mojo module of the same name (`src/surface/heat_method_distance.cpp` ->
 - `mogeometry/pointcloud`: point clouds.
 - `mogeometry/__init__.mojo` re-exports the public API (add new public
   names there).
-- geometry-central's `numerical/` has no counterpart: use MojoDEC.
+- geometry-central's `numerical/` has no counterpart: use molina.
 - `tests/`: one `test_*.mojo` per area; reference data from
   geometry-central in `tests/data/<area>/` with the C++ driver that
   wrote it; meshes in `tests/meshes/`.
 - `benchmarks/`: timing experiments behind design decisions (each
   file's doc string says what it measures; AGENTS.md, Architecture,
   records the results).
-- `tools/build_deps.sh`: the `deps` task.
 - `docs/`: the plan, the doc string guide, the doc-check baseline.
 
 ## Tech stack and toolchain
 
-- **MojoDEC dependency.** `pixi run deps` precompiles, from
-  `$MOJODEC_PATH` (default `../MojoDEC`), MojoDEC's vendored NuMojo, its
-  linear algebra package molina, and MojoDEC itself into
-  `build/numojo.mojoc`, `build/molina.mojoc`, and `build/mojodec.mojoc`,
-  with this workspace's Mojo (a `.mojoc` loads only in the Mojo that
-  built it), so code compiles with `-I . -I build`. Sparse matrices and
-  solvers come from molina (`from molina import CSRMatrix,
-  SparseCholesky`), the DEC from mojodec. Read `../MojoDEC/AGENTS.md`
-  before using the solvers: `SparseLDLT` (refinement steps, supernodal
-  layout), `SparseCholesky` (SPD, no refinement), `cg`/`minres` (keyword
-  options, `nullspace=`), `eigsh`, and NuMojo's slow elementwise
-  arithmetic are all described there. A fix MojoDEC or molina needs goes
-  there.
+- **molina dependency.** `pixi.toml` takes molina as a git dependency
+  pinned to a commit (`rev`). pixi builds it with this workspace's Mojo,
+  set by `[workspace.build-variants] mojo-compiler`, which must equal
+  the `mojo` pin (a `.mojoc` loads only in the Mojo that built it), and
+  installs `molina.mojoc` into the environment, so code compiles with
+  `-I .` alone. This needs pixi 0.84 or newer. Sparse matrices and
+  solvers: `from molina import CSRMatrix, SparseCholesky`. Read
+  `../molina/AGENTS.md` before using the solvers: `SparseLDLT`
+  (refinement steps, supernodal layout), `SparseCholesky` (SPD, no
+  refinement), `cg`/`minres` (keyword options, `nullspace=`), and
+  `eigsh` are all described there. A fix molina needs goes into molina,
+  with its tests; then move `rev`. To work on both at once, set the
+  dependency to `{ path = "../molina" }` locally and don't commit that.
+- **No MojoDEC dependency.** mogeometry imports nothing from mojodec, so
+  that MojoDEC can import mogeometry later. Code it needs from MojoDEC
+  moves into molina (if it is linear algebra) or is ported here.
 - **Pinned Mojo.** `pixi.toml` pins `mojo` and `max-core` to the exact
-  nightly MojoDEC's `pixi.lock` records (1.3.0.dev2026110305), because
-  MojoDEC and NuMojo are compiled from source here and newer nightlies
-  break them (2026111805 removed `std.memory.UnsafePointer`). When
-  MojoDEC moves to a new nightly, move the pins with it.
+  nightly MojoDEC's `pixi.lock` records (1.3.0.dev2026110305), so the
+  two can be built together later. When MojoDEC moves to a new nightly,
+  move the pins and the build variant with it.
 - `-D ASSERT=none` removes `debug_assert` bounds checks. `mojo run`/`build`
   accept it (the `*-release` tasks pass it via `MOJO_FLAGS`); `mojo
   precompile` does not, so it applies only to code compiled from source.
 
 ### Known toolchain bugs
 
-These are from MojoDEC's experience with the same toolchain; its
-AGENTS.md has the details and more.
+These are from MojoDEC's and molina's experience with the same
+toolchain; their AGENTS.md files have the details and more.
 
 - Write floats as text with `write_float` (MojoDEC's
-  `routines/io/scan.mojo`), not
+  `routines/io/scan.mojo`; copy it here when it is needed), not
   `String(x)`: Mojo prints some doubles with a digit too few, so they
   don't read back. Parse integer text with `atol`, not `atof`.
 - `assert_almost_equal` has a default `rtol=1e-5` on top of `atol`, so
@@ -138,9 +140,8 @@ AGENTS.md has the details and more.
   free `dot` for `Vector2` and for `Vector3`) becomes a method.
 - Mojo's `>>` by 64 or more is undefined (it gave garbage): bound shift
   loops.
-- NuMojo's elementwise array arithmetic is slow (50 times a sparse
-  product for 4,000 entries); in hot loops, write the loop over
-  `unsafe_get`/`unsafe_set`.
+- molina's `RealArray` `+`, `-`, and scaling allocate their result: in
+  hot loops, write the loop over `unsafe_get`/`unsafe_set`.
 
 ## Architecture
 
@@ -266,7 +267,7 @@ Record each decision here, with its reason, when it is made.
 
 - geometry-central is MIT: port its code directly. Each ported file's
   header names the geometry-central file(s) it follows and the license
-  (`NOTICE` has the full text and commit), as MojoDEC's ports of faer
+  (`NOTICE` has the full text and commit), as molina's ports of faer
   do. Its bundled dependencies are permissive too (happly MIT, nanoflann
   BSD, nanort MIT, Eigen MPL2); credit any that a port follows.
 - Keep geometry-central's algorithms and numerics (the same formulas,
@@ -279,7 +280,7 @@ Record each decision here, with its reason, when it is made.
   string.
 - Parallelize only after the serial port matches the reference, and
   then with molina's `parallel_ranges` (`molina.parallel`),
-  keeping results bit for bit serial (see MojoDEC's AGENTS.md, Parallel
+  keeping results bit for bit serial (see molina's AGENTS.md, Parallel
   loops). geometry-central itself is serial.
 
 ## Coding standards
@@ -300,7 +301,8 @@ Record each decision here, with its reason, when it is made.
   `def test_*() raises` in the file is picked up automatically.
 - Tests compare against geometry-central's own results (its GoogleTest
   cases, and reference data its C++ writes), and against MojoDEC where
-  both compute the same quantity.
+  both compute the same quantity, through data exported from MojoDEC
+  (as molina's tests take MojoDEC's matrices).
 - Floating-point checks use `assert_almost_equal(..., atol=..., rtol=0)`
   with a tolerance from the problem's conditioning, not a loose default.
 - Reference data stores each double as its bit pattern, so the expected

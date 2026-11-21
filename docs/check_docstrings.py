@@ -10,7 +10,7 @@ records, so the count can only go down.
     pixi run doc-check --update             # record the current counts
     pixi run doc-check --list surface/surface_mesh  # the warnings in matching files
 
-Run from the repository root, after `pixi run deps`.
+Run from the repository root.
 """
 
 import argparse
@@ -31,14 +31,14 @@ def run_mojo_doc():
     with tempfile.TemporaryDirectory() as tmp:
         proc = subprocess.run(
             [
-                "mojo", "doc", "-I", "build", "--diagnose-missing-doc-strings",
+                "mojo", "doc", "--diagnose-missing-doc-strings",
                 "-o", os.path.join(tmp, "api.json"), "mogeometry",
             ],
             cwd=ROOT, capture_output=True, text=True,
         )
     out = proc.stdout + proc.stderr
     if proc.returncode != 0:
-        sys.exit(out + "\nmojo doc failed (did `pixi run deps` run?)")
+        sys.exit(out + "\nmojo doc failed")
     warnings = []
     for line in out.splitlines():
         m = WARNING.match(line.strip())

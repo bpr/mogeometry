@@ -9,9 +9,9 @@ transport, direction fields, intrinsic triangulations,
 parameterization, remeshing.
 
 Sparse linear algebra (matrices, sparse Cholesky and LDLᵀ, Krylov and
-eigenvalue solvers) comes from
-MojoDEC, a sibling project (checked out at `../MojoDEC`) on discrete
-exterior calculus.
+eigenvalue solvers) comes from [molina](https://github.com/bpr/molina),
+the linear algebra of MojoDEC, a sibling project on discrete exterior
+calculus.
 
 **Status:** started. Nothing is ported yet; `docs/plan.md` gives the
 order.
@@ -19,12 +19,12 @@ order.
 ## Setup
 
 ```sh
-pixi install
-pixi run deps     # precompile MojoDEC (from ../MojoDEC, or $MOJODEC_PATH)
+pixi install      # also builds molina from git
 pixi run test
 ```
 
-Linux x86-64 only, as MojoDEC. The Mojo version is pinned to the one
+Linux x86-64 only, as MojoDEC. Needs pixi 0.84 or newer (`pixi
+self-update`) to build molina. The Mojo version is pinned to the one
 MojoDEC's `pixi.lock` records.
 
 ## License

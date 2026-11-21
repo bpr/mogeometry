@@ -11,7 +11,7 @@ Geometry processing on surface meshes and point clouds: halfedge meshes,
 their intrinsic and embedded geometry, and the algorithms built on them
 (geodesic distance, vector transport, direction fields, intrinsic
 triangulations, parameterization, remeshing). A Mojo port of
-geometry-central. Sparse linear algebra comes from MojoDEC.
+geometry-central. Sparse linear algebra comes from molina.
 
 Ported so far: the small vectors and elementary geometry of
 `mogeometry.utilities`, and `ManifoldSurfaceMesh` with its element
